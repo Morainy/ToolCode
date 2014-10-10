@@ -16,6 +16,7 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include "RIO.h"
+#include <signal.h>
 
 #define LISTENQ 1024
 #define MAXLINE 1024
@@ -30,6 +31,7 @@ void clienterror(int fd , char * cause , char * errnum , char * shortmsg , char 
 void serv_static(int fd , char * filename ,int filesize);
 void serv_dynamic(int fd , char * filename , char *cgiarg);
 void get_filetype(char * filename ,char * filetype);
+void handler(int);
 
 
 void get_filetype(char * filename ,char * filetype)
@@ -54,6 +56,7 @@ void serv_static(int fd , char * filename ,int filesize)
 	sprintf(buf , "%sServer:Tiny Web Server\r\n" , buf);
 	sprintf(buf , "%sContent-length:%d\r\n" , buf , filesize);
 	sprintf(buf , "%sContent-type:%s\r\n\r\n" , buf ,filetype);
+	rio_writen(fd , buf , strlen(buf));
 
 	srcfd = open(filename , O_RDONLY , 0);
 	srcp = mmap(0 , filesize , PROT_READ , MAP_PRIVATE , srcfd , 0);
@@ -190,10 +193,17 @@ void doit(int fd)
 	}
 
 }
+
+void handler(int sig)
+{
+	wait(NULL);
+}
 int main(int argc, char const *argv[])
 {
 	int port , listenfd , connfd , clientlen;
+	pid_t pid;
 	struct sockaddr_in clientaddr , serveraddr;
+	signal(SIGCHLD , handler);
 	if(argc != 2)
 	{
 		fprintf(stderr, "usage : %s  <port> \n",argv[0]);
@@ -232,7 +242,13 @@ int main(int argc, char const *argv[])
 			perror("accept error");
 			return -1;
 		}
-		doit(connfd);
+		if( (pid = fork()) == 0)
+		{
+			close(listenfd);
+			doit(connfd);
+			close(connfd);
+			exit(0);
+		}
 		close(connfd);
 	}
 	return 0;

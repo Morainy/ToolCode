@@ -17,12 +17,14 @@
 #include <sys/mman.h>
 #include "RIO.h"
 #include <signal.h>
+#include <sys/time.h>
+#include <time.h>
 
 #define LISTENQ 1024
 #define MAXLINE 1024
 typedef struct sockaddr SA;
 extern char ** environ;
-
+int logfd;
 
 void doit(int fd);
 void read_requesthdrs(rio_t * rp);
@@ -81,7 +83,6 @@ void serv_dynamic(int fd , char * filename , char *cgiarg)
 		dup2(fd , STDOUT_FILENO);
 		execve(filename , emptylist , environ);
 	}
-	wait(NULL);
 }
 
 
@@ -137,9 +138,12 @@ void read_requesthdrs(rio_t * rp)
 	rio_readlineb(rp , buf , MAXLINE);
 	while(strcmp(buf , "\r\n"))
 	{
+		//printf("%s\n",buf);
+		rio_writen(logfd , buf , strlen(buf));
 		rio_readlineb(rp , buf ,MAXLINE);
-		printf("%s\n",buf);
 	}
+	sprintf(buf , "\r\n\r\n");
+	rio_writen(logfd , buf , strlen(buf));
 	return;
 }
 void doit(int fd)
@@ -149,11 +153,19 @@ void doit(int fd)
 	char method[MAXLINE] , uri[MAXLINE] , version[MAXLINE];
 	char filename[MAXLINE] , cgiarg[MAXLINE];
 	char buf[MAXLINE];
+	char timestr[MAXLINE];
 	rio_t rio;
 	rio_readinitb(&rio , fd);
 	rio_readlineb(&rio , buf , MAXLINE);
-
 	sscanf(buf , "%s %s %s" , method , uri , version);
+
+	logfd = open("log" , O_RDWR|O_APPEND|O_CREAT , S_IRUSR|S_IWUSR);
+	struct timeval tv;
+	gettimeofday(&tv , NULL);
+	sprintf(timestr , "%s\n" , ctime(&tv.tv_sec));
+	rio_writen(logfd , timestr , strlen(timestr));
+	rio_writen(logfd , buf , strlen(buf));
+	
 	if(strcasecmp(method , "GET"))
 	{
 		clienterror(fd , method , "501" , "Not Implemented" 
